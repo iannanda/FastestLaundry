@@ -1,220 +1,114 @@
 import streamlit as st
-from datetime import date
-import pandas as pd
 import os
 
-# ─── PAGE CONFIG ─────────────────────────────────────────────
-st.set_page_config(
-    page_title="CleanWave Laundry",
-    page_icon="🌊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(layout="wide")
 
-# ─── LOAD CSS (FIXED) ────────────────────────────────────────
-def load_css():
-    css_path = os.path.join(os.getcwd(), "style.css")
-    if os.path.exists(css_path):
-        with open(css_path) as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    else:
-        st.info("Style default digunakan (style.css tidak ditemukan)")
-
-load_css()
-
-# ─── DATA DEFAULT ────────────────────────────────────────────
-DEFAULT_CUSTOMERS = [
-    {"id": 1, "nama": "Budi Santoso", "hp": "081234567890", "email": "budi@email.com", "bergabung": "2024-01-10", "poin": 320, "tier": "Silver"},
-    {"id": 2, "nama": "Siti Rahayu", "hp": "082345678901", "email": "siti@email.com", "bergabung": "2024-02-15", "poin": 750, "tier": "Gold"},
-]
-
-DEFAULT_TRANSAKSI = []
-
-LAYANAN = {
-    "Cuci & Setrika": 10000,
-    "Cuci Kering": 8000,
-    "Setrika Saja": 7000,
-    "Express (6 jam)": 15000,
+# ─── CUSTOM CSS ─────────────────────────────────────────────
+st.markdown("""
+<style>
+body {
+    background: #f5f7fb;
 }
 
-# ─── SESSION STATE ───────────────────────────────────────────
-def init_state():
-    if "customers" not in st.session_state:
-        st.session_state.customers = DEFAULT_CUSTOMERS.copy()
-    if "transaksi" not in st.session_state:
-        st.session_state.transaksi = DEFAULT_TRANSAKSI.copy()
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = None
-    if "page" not in st.session_state:
-        st.session_state.page = "Beranda"
+.navbar {
+    background: linear-gradient(90deg,#0ea5e9,#0284c7);
+    padding: 15px 30px;
+    border-radius: 10px;
+    color: white;
+    font-weight: bold;
+}
 
-init_state()
+.hero {
+    background: linear-gradient(135deg,#0ea5e9,#0369a1);
+    padding: 50px;
+    border-radius: 20px;
+    color: white;
+    margin-top: 20px;
+}
 
-# ─── HELPER ─────────────────────────────────────────────────
-def format_rp(x):
-    return f"Rp {int(x):,}".replace(",", ".")
+.card {
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    text-align: center;
+}
 
-def next_id(data):
-    return max([d["id"] for d in data], default=0) + 1
+.service-card {
+    background: #f1f5f9;
+    padding: 20px;
+    border-radius: 15px;
+    border: 1px solid #cbd5e1;
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-def get_tier(poin):
-    if poin >= 500:
-        return "Gold", "🥇"
-    elif poin >= 200:
-        return "Silver", "🥈"
-    else:
-        return "Bronze", "🥉"
+# ─── NAVBAR ─────────────────────────────────────────────
+st.markdown("""
+<div class="navbar">
+    🌊 CleanWave &nbsp;&nbsp;&nbsp;
+    🏠 Beranda &nbsp;&nbsp;
+    📦 Pesan &nbsp;&nbsp;
+    📋 Riwayat &nbsp;&nbsp;
+    ⭐ Member &nbsp;&nbsp;
+    🔧 Alat &nbsp;&nbsp;
+    👤 Masuk
+</div>
+""", unsafe_allow_html=True)
 
-def find_customer(cid):
-    return next((c for c in st.session_state.customers if c["id"] == cid), None)
+# ─── HERO SECTION ────────────────────────────────────────
+st.markdown("""
+<div class="hero">
+    <h1>CleanWave Laundry 🌊</h1>
+    <p>Layanan laundry profesional dengan sistem digital terintegrasi.</p>
+    <button style="padding:10px 20px;border:none;border-radius:10px;background:#0284c7;color:white;">Pesan Sekarang</button>
+</div>
+""", unsafe_allow_html=True)
 
-# ─── SIDEBAR (FIXED) ─────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## 🌊 CleanWave Laundry")
+# ─── STAT CARD ───────────────────────────────────────────
+col1, col2, col3 = st.columns(3)
 
-    if st.session_state.logged_in:
-        u = st.session_state.logged_in
-        tier, icon = get_tier(u["poin"])
-        st.success(f"{u['nama']} ({icon} {tier})")
+with col1:
+    st.markdown('<div class="card"><h2>3</h2><p>Pelanggan</p></div>', unsafe_allow_html=True)
 
-    menu = ["🏠 Beranda", "📦 Pesan Laundry", "📋 Riwayat Transaksi", "🔑 Masuk / Daftar"]
+with col2:
+    st.markdown('<div class="card"><h2>5</h2><p>Transaksi</p></div>', unsafe_allow_html=True)
 
-    selected = st.radio("Menu", menu)
+with col3:
+    st.markdown('<div class="card"><h2>1</h2><p>Member Gold</p></div>', unsafe_allow_html=True)
 
-    # FIX SPLIT
-    if " " in selected:
-        page = selected.split(" ", 1)[1]
-    else:
-        page = selected
+# ─── LAYANAN ─────────────────────────────────────────────
+st.markdown("## Layanan Kami")
 
-    st.session_state.page = page
+col1, col2 = st.columns(2)
 
-    if st.session_state.logged_in:
-        if st.button("Logout"):
-            st.session_state.logged_in = None
-            st.rerun()
+with col1:
+    st.markdown("""
+    <div class="service-card">
+        <h4>Cuci & Setrika</h4>
+        <p>Rp 10.000/kg</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ─── BERANDA ────────────────────────────────────────────────
-if page == "Beranda":
-    st.title("CleanWave Laundry 🌊")
-    st.write("Layanan laundry digital modern berbasis Streamlit.")
+    st.markdown("""
+    <div class="service-card">
+        <h4>Setrika Saja</h4>
+        <p>Rp 7.000/kg</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
+with col2:
+    st.markdown("""
+    <div class="service-card">
+        <h4>Cuci Kering</h4>
+        <p>Rp 8.000/kg</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with col1:
-        st.metric("👥 Pelanggan", len(st.session_state.customers))
-    with col2:
-        st.metric("📦 Transaksi", len(st.session_state.transaksi))
-    with col3:
-        total = sum(t["harga"] for t in st.session_state.transaksi)
-        st.metric("💰 Omset", format_rp(total))
-
-# ─── PESAN ─────────────────────────────────────────────────
-elif page == "Pesan Laundry":
-    st.header("Pesan Laundry")
-
-    nama = st.text_input("Nama")
-    hp = st.text_input("No HP")
-
-    layanan = st.selectbox("Layanan", list(LAYANAN.keys()))
-    kg = st.number_input("Berat (kg)", min_value=0.5, value=1.0)
-
-    total = kg * LAYANAN[layanan]
-    poin = int(total // 1000)
-
-    st.info(f"Total: {format_rp(total)} | Poin: {poin}")
-
-    if st.button("Pesan"):
-        if not nama or not hp:
-            st.error("Nama & HP wajib")
-        elif not hp.isdigit():
-            st.error("HP harus angka")
-        else:
-            cust = next((c for c in st.session_state.customers if c["hp"] == hp), None)
-
-            if not cust:
-                cust = {
-                    "id": next_id(st.session_state.customers),
-                    "nama": nama,
-                    "hp": hp,
-                    "email": "",
-                    "bergabung": str(date.today()),
-                    "poin": 0,
-                    "tier": "Bronze"
-                }
-                st.session_state.customers.append(cust)
-
-            tx = {
-                "id": next_id(st.session_state.transaksi),
-                "customer_id": cust["id"],
-                "tanggal": str(date.today()),
-                "kg": kg,
-                "layanan": layanan,
-                "harga": total,
-                "status": "Menunggu",
-                "poin": poin
-            }
-
-            st.session_state.transaksi.append(tx)
-
-            cust["poin"] += poin
-
-            st.success(f"Pesanan berhasil! ID: {tx['id']}")
-
-# ─── RIWAYAT ────────────────────────────────────────────────
-elif page == "Riwayat Transaksi":
-    st.header("Riwayat Transaksi")
-
-    rows = []
-    for tx in st.session_state.transaksi:
-        cust = find_customer(tx["customer_id"])
-        rows.append({
-            "ID": tx["id"],
-            "Nama": cust["nama"] if cust else "-",
-            "Tanggal": tx["tanggal"],
-            "Layanan": tx["layanan"],
-            "Total": format_rp(tx["harga"]),
-            "Status": tx["status"]
-        })
-
-    if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    else:
-        st.info("Belum ada transaksi")
-
-# ─── LOGIN ──────────────────────────────────────────────────
-elif page == "Masuk / Daftar":
-    st.header("Login / Daftar")
-
-    tab1, tab2 = st.tabs(["Login", "Daftar"])
-
-    with tab1:
-        hp = st.text_input("No HP")
-        if st.button("Masuk"):
-            cust = next((c for c in st.session_state.customers if c["hp"] == hp), None)
-            if cust:
-                st.session_state.logged_in = cust
-                st.success(f"Selamat datang {cust['nama']}")
-                st.rerun()
-            else:
-                st.error("Tidak ditemukan")
-
-    with tab2:
-        nama = st.text_input("Nama", key="reg_nama")
-        hp = st.text_input("HP", key="reg_hp")
-
-        if st.button("Daftar"):
-            if not nama or not hp:
-                st.error("Isi semua")
-            else:
-                cust = {
-                    "id": next_id(st.session_state.customers),
-                    "nama": nama,
-                    "hp": hp,
-                    "email": "",
-                    "bergabung": str(date.today()),
-                    "poin": 0,
-                    "tier": "Bronze"
-                }
-                st.session_state.customers.append(cust)
-                st.success("Berhasil daftar")
+    st.markdown("""
+    <div class="service-card">
+        <h4>Express</h4>
+        <p>Rp 15.000/kg</p>
+    </div>
+    """, unsafe_allow_html=True)
