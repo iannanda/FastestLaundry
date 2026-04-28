@@ -1,419 +1,567 @@
 import streamlit as st
-import numpy as np
+from datetime import date
 import pandas as pd
+import json
+import os
 
-# ====== CUSTOM BACKGROUND & SIDEBAR ======
-st.markdown("""
-    <style>
-    /* Warna background sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: #737373 !important;
-    }
+# ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="CleanWave Laundry",
+    page_icon="🌊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-    /* Warna teks sidebar agar kontras */
-    section[data-testid="stSidebar"] * {
-        color: white !important;
-    }
+# ─── LOAD CSS ─────────────────────────────────────────────────────────────────
+def load_css():
+    with open(os.path.join(os.path.dirname(__file__), "style.css")) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-    /* Konten utama transparan */
-    .st-emotion-cache-1kyxreq, .st-emotion-cache-10trblm {
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 20px;
-        border-radius: 10px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+load_css()
 
-    # Sidebar Navigation
-menu = st.sidebar.radio("📂 Navigasi", [
-    "Beranda",
-    "Dasar Teori",
-    "Kalkulator Ketidakpastian",
-    "Cara Perhitungan Manual",
-    "Faktor Kesalahan",
-    "Contoh Soal"
-])
+# ─── DATA DEFAULTS ────────────────────────────────────────────────────────────
+DEFAULT_CUSTOMERS = [
+    {"id": 1, "nama": "Budi Santoso",  "hp": "081234567890", "email": "budi@email.com",  "bergabung": "2024-01-10", "poin": 320, "tier": "Silver"},
+    {"id": 2, "nama": "Siti Rahayu",   "hp": "082345678901", "email": "siti@email.com",  "bergabung": "2024-02-15", "poin": 750, "tier": "Gold"},
+    {"id": 3, "nama": "Ahmad Fauzi",   "hp": "083456789012", "email": "ahmad@email.com", "bergabung": "2024-03-20", "poin": 120, "tier": "Bronze"},
+]
 
-# === BERANDA ===
-if menu == "Beranda":
-    # Header & Deskripsi Menarik
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: #1f77b4;'>Selamat Datang di <span style='color:#32cd32;'>PhyCalc</span>!</h1>
-        <h5 style='font-weight: normal;'>Situs untuk belajar dan menghitung <i>nilai ketidakpastian</i> dalam pengukuran ilmiah dan teknis 📏🧪</h5>
-    </div>
-    """, unsafe_allow_html=True)
+DEFAULT_TRANSAKSI = [
+    {"id": 1001, "customer_id": 1, "tanggal": "2025-04-01", "kg": 3.5, "layanan": "Cuci & Setrika",  "harga": 35000, "status": "Selesai",   "poin": 35, "deterjen": "Attack",       "mesin": "Mesin LG 9kg"},
+    {"id": 1002, "customer_id": 2, "tanggal": "2025-04-05", "kg": 5.0, "layanan": "Cuci Kering",     "harga": 40000, "status": "Selesai",   "poin": 40, "deterjen": "Rinso",        "mesin": "Mesin Samsung 10kg"},
+    {"id": 1003, "customer_id": 1, "tanggal": "2025-04-10", "kg": 2.0, "layanan": "Setrika Saja",    "harga": 14000, "status": "Diproses",  "poin": 14, "deterjen": "-",            "mesin": "Setrika Uap Philips"},
+    {"id": 1004, "customer_id": 3, "tanggal": "2025-04-12", "kg": 4.0, "layanan": "Cuci & Setrika",  "harga": 40000, "status": "Selesai",   "poin": 40, "deterjen": "Daia",         "mesin": "Mesin LG 9kg"},
+    {"id": 1005, "customer_id": 2, "tanggal": "2025-04-15", "kg": 6.5, "layanan": "Cuci Kering",     "harga": 52000, "status": "Menunggu",  "poin": 52, "deterjen": "Attack",       "mesin": "Mesin Samsung 10kg"},
+]
 
-    # Slide Gambar
-    slides = [
-        {
-            "path": "https://asset-a.grid.id/crop/0x0:0x0/700x465/photo/2023/08/01/ukuranjpg-20230801094936.jpg",
-            "caption": "🔍 Nilai Ketidakpastian - Ketelitian adalah segalanya."
-        },
-        {
-            "path": "https://www.kucari.com/wp-content/uploads/2018/09/Alat-Lab.jpg",
-            "caption": "🧪 Galat Alat - Alat ukur yang tepat menghasilkan data yang bisa dipercaya."
-        },
-        {
-            "path": "https://i.pinimg.com/736x/dd/59/db/dd59dbb6ae1e3415ac2c20d2406b332c.jpg",
-            "caption": "🔁 Pengulangan - Semakin banyak data, semakin baik ketepatannya."
-        }
-    ]
+LAYANAN = {
+    "Cuci & Setrika":  {"harga_per_kg": 10000, "deskripsi": "Dicuci bersih + disetrika rapi"},
+    "Cuci Kering":     {"harga_per_kg": 8000,  "deskripsi": "Dicuci + dikeringkan mesin"},
+    "Setrika Saja":    {"harga_per_kg": 7000,  "deskripsi": "Hanya layanan setrika"},
+    "Express (6 jam)": {"harga_per_kg": 15000, "deskripsi": "Selesai dalam 6 jam, cuci + setrika"},
+}
 
-    if "slide_index" not in st.session_state:
-        st.session_state.slide_index = 0
+HADIAH = [
+    {"nama": "Diskon 10%",     "poin": 100, "icon": "🏷️", "deskripsi": "Diskon 10% untuk transaksi berikutnya"},
+    {"nama": "Gratis Cuci 2kg","poin": 250, "icon": "👕", "deskripsi": "Gratis layanan cuci hingga 2kg"},
+    {"nama": "Gratis Setrika", "poin": 150, "icon": "🔥", "deskripsi": "Gratis layanan setrika untuk satu order"},
+    {"nama": "Diskon 25%",     "poin": 400, "icon": "💎", "deskripsi": "Diskon besar 25% untuk transaksi berikutnya"},
+    {"nama": "Gratis Cuci 5kg","poin": 600, "icon": "🎁", "deskripsi": "Gratis layanan cuci hingga 5kg"},
+]
 
-    col1, col2, col3 = st.columns([1, 6, 1])
+PERALATAN = [
+    {"kategori": "Mesin Cuci", "nama": "LG Front Load 9kg",       "brand": "LG",      "kapasitas": "9 kg",  "deskripsi": "Cocok untuk pakaian sehari-hari, program cuci hemat energi", "icon": "🫧"},
+    {"kategori": "Mesin Cuci", "nama": "Samsung Top Load 10kg",   "brand": "Samsung", "kapasitas": "10 kg", "deskripsi": "Kapasitas besar untuk cucian keluarga, teknologi eco-bubble",  "icon": "🫧"},
+    {"kategori": "Pengering",  "nama": "Dryer LG 8kg",            "brand": "LG",      "kapasitas": "8 kg",  "deskripsi": "Pengeringan cepat dengan sensor kelembaban otomatis",          "icon": "💨"},
+    {"kategori": "Setrika",    "nama": "Setrika Uap Philips GC2672","brand": "Philips","kapasitas": "-",    "deskripsi": "Setrika uap tekanan tinggi, anti kusut sempurna",              "icon": "♨️"},
+]
 
-    with col1:
-        st.button("⬅️ Sebelumnya", 
-                  on_click=lambda: st.session_state.update(slide_index=st.session_state.slide_index - 1),
-                  disabled=st.session_state.slide_index == 0)
+BAHAN = [
+    {"nama": "Attack",            "tipe": "Deterjen",  "kegunaan": "Cuci standar",        "icon": "🧴", "cocok": "Semua jenis kain"},
+    {"nama": "Rinso Anti Noda",   "tipe": "Deterjen",  "kegunaan": "Noda membandel",      "icon": "🧴", "cocok": "Katun, polyester"},
+    {"nama": "Daia Bunga",        "tipe": "Deterjen",  "kegunaan": "Pewangi kuat",        "icon": "🧴", "cocok": "Semua jenis kain"},
+    {"nama": "Molto Konsentrat",  "tipe": "Pelembut",  "kegunaan": "Pelembut & pewangi",  "icon": "🌸", "cocok": "Semua kain"},
+    {"nama": "So Klin Pemutih",   "tipe": "Pemutih",   "kegunaan": "Pakaian putih",       "icon": "⚪", "cocok": "Hanya kain putih"},
+    {"nama": "Air RO",            "tipe": "Air",       "kegunaan": "Air bersih proses cuci","icon": "💧","cocok": "Semua laundry"},
+]
 
-    with col3:
-        st.button("➡️ Selanjutnya", 
-                  on_click=lambda: st.session_state.update(slide_index=st.session_state.slide_index + 1),
-                  disabled=st.session_state.slide_index == len(slides) - 1)
+# ─── SESSION STATE ─────────────────────────────────────────────────────────────
+def init_state():
+    if "customers" not in st.session_state:
+        st.session_state.customers = DEFAULT_CUSTOMERS.copy()
+    if "transaksi" not in st.session_state:
+        st.session_state.transaksi = DEFAULT_TRANSAKSI.copy()
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = None
+    if "page" not in st.session_state:
+        st.session_state.page = "Beranda"
+    if "notif" not in st.session_state:
+        st.session_state.notif = None
 
-    current = slides[st.session_state.slide_index]
-    st.image(current["path"], caption=current["caption"], use_container_width=True)
+init_state()
 
-    st.markdown(f"<p style='text-align:center; color:gray;'>Slide {st.session_state.slide_index + 1} dari {len(slides)}</p>", unsafe_allow_html=True)
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+def get_tier(poin):
+    if poin >= 500: return "Gold",   "#F59E0B", "🥇"
+    if poin >= 200: return "Silver", "#6B7280", "🥈"
+    return "Bronze", "#92400E", "🥉"
 
-    # Deskripsi Isi Halaman
-    st.markdown("""
-    <hr>
-    <div style='font-size:16px; text-align:justify'>
-        <p>Halo teman-teman semua! 👋</p>
-        <p>Di sini kami akan membantu kalian memahami dan menghitung nilai ketidakpastian secara mudah dan menyenangkan.</p>
-        <p>Kalian bisa menjelajahi berbagai fitur melalui menu di sebelah kiri:</p>
-        <ul>
-            <li>📌 Beranda</li>
-            <li>📚 Dasar Teori</li>
-            <li>📊 Kalkulator Ketidakpastian</li>
-            <li>📝 Cara Perhitungan Manual</li>
-            <li>⚠️ Faktor Kesalahan</li>
-            <li>🧠 Contoh Soal dan Pembahasan</li>
-        </ul>
-        <p>Yuk mulai belajar sekarang! 💪</p>
-    </div>
-    """, unsafe_allow_html=True)
+def format_rp(val):
+    return f"Rp {int(val):,}".replace(",", ".")
 
-    
-    # Daftar Kelompok
-    st.markdown("### 👨‍🔬 Pembuat Aplikasi - Kelompok 3")
-    st.markdown("""
-    **Anggota:**
-    1. Aditya Dwika Iannanda         - 2460308
-    2. Dhe Adila Zahra Tubarila      - 2460354
-    3. Laila Najwa                   - 2460405
-    4. Naura Amalia Shaliha          - 2460461
-    5. Rizava Apriza                 - 2460503
-    """)
+def find_customer(customer_id):
+    return next((c for c in st.session_state.customers if c["id"] == customer_id), None)
 
-    # Footer
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center;'>© 2025 POLITEKNIK AKA BOGOR - All rights reserved.</p>", unsafe_allow_html=True)
+def next_tx_id():
+    if not st.session_state.transaksi:
+        return 1001
+    return max(t["id"] for t in st.session_state.transaksi) + 1
 
-# ===== DASAR TEORI =====
-elif menu == "Dasar Teori":
-    # Header & Deskripsi Menarik
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: #1f77b4;'>Konsep <span style='color:#add8e6;'>Perhitungan </span>!</h1>
-        <h5 style='font-weight: normal;'>Sebelum menggunakan <i> Phycalc </i> kamu perlu memahami konsep mengenai perhitungan, terutama tentang galat </h5>
-    </div> 
-    
-<p>Proses pembelajaran fisika tidak hanya menekankan penguasaan konsep, tetapi juga keterampilan proses sains yang harus dimiliki siswa, salah satunya adalah kemampuan menaksir ukuran besaran fisika. Kemampuan ini memiliki peranan penting dalam kehidupan, terutama pada besaran-besaran yang kerap digunakan, seperti panjang, massa, dan waktu. Kemampuan ini sangat dibutuhkan dalam berbagai bidang. Namun, belum banyak peneliti yang mengkaji kemampuan ini. Oleh karena itu, diperlukan analisis kemampuan siswa dalam menaksir ukuran besaran fisika. Penelitian ini bertujuan untuk menganalisis kemampuan siswa dalam menaksir ukuran besaran fisika, mengetahui perbedaan kemampuan menaksir ukuran antara siswa laki-laki dan perempuan, mengetahui besaran yang paling mudah dan paling sulit ditaksir, serta mengetahui acuan yang digunakan siswa dalam menaksir ukuran. <strong>(HARTANTI & HARTANTI, 2024)</strong></p>
+def update_customer_points(customer_id, tambah_poin):
+    for i, c in enumerate(st.session_state.customers):
+        if c["id"] == customer_id:
+            new_poin = c["poin"] + tambah_poin
+            tier_name, _, _ = get_tier(new_poin)
+            st.session_state.customers[i] = {**c, "poin": new_poin, "tier": tier_name}
+            if st.session_state.logged_in and st.session_state.logged_in["id"] == customer_id:
+                st.session_state.logged_in = st.session_state.customers[i]
+            break
 
-<li><b>Galat (kesalahan) pengukuran</b><br>
-perbedaan antara nilai yang diukur dengan nilai sebenarnya dari suatu besaran.</li><br>
-    
-<li><b>Galat Sistematis</b><br> 
-Galat yang cenderung tetap dan dapat diprediksi, disebabkan oleh kesalahan pada alat ukur atau metode pengukuran. Contohnya, kesalahan kalibrasi atau titik nol pada alat ukur.</li><br>
-    
-<li><b>Galat Acak</b><br>
-Galat yang tidak dapat diprediksi dan bervariasi secara acak, disebabkan oleh faktor-faktor yang tidak terkontrol seperti fluktuasi lingkungan atau kesalahan pengamat.</li><br>   
+def show_notif(msg, tipe="success"):
+    if tipe == "success":
+        st.success(msg)
+    else:
+        st.error(msg)
 
-<li><b>Galat Umum (Kekeliruan)</b><br>
-Galat yang disebabkan oleh kesalahan manusia, seperti kesalahan membaca skala atau kesalahan dalam mencatat hasil.</li><br>
-    
-<li><b>Galat Absolut</b><br>
-Selisih antara nilai terukur dengan nilai sebenarnya.</li><br>
-    
-<li><b>Galat Relatif</b><br>
-Galat absolut dibagi dengan nilai sebenarnya, sering dinyatakan dalam persen.</li><br>
-    
-<li><b>Distribusi Galat</b><br>
-Pengukuran berulang dapat menghasilkan distribusi galat yang dapat dianalisis secara statistik untuk mendapatkan informasi tentang keakuratan dan presisi pengukuran.</li><br>
-    """, unsafe_allow_html=True)
-
-
-
-# ===== KALKULATOR KETIDAKPASTIAN =====
-elif menu == "Kalkulator Ketidakpastian":
-    
-    # Header & Deskripsi Menarik
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: #ff8f00;'>Kalkulator <span style='color:#737373;'>Ketidakpastian 📊 </span>!</h1>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    Masukkan data pengukuranmu, dan kalkulator ini akan secara otomatis menghitung:
-    
-    - Ketidakpastian Tipe A (berdasarkan statistik pengukuran berulang)
-    - Ketidakpastian Tipe B (berdasarkan resolusi alat)
-    - Ketidakpastian Gabungan
-    - Hasil akhir dalam format: **x̄ ± u<sub>c</sub>**
-    - Persentase ketidakpastian terhadap nilai rata-rata
-    """, unsafe_allow_html=True)
-
-    # Input data
-    data_input = st.text_area("📥 Masukkan data pengukuran (pisahkan dengan koma)", "10.1, 10.3, 10.2, 10.4, 10.2")
-    resolusi = st.number_input("📏 Masukkan nilai resolusi alat ukur", value=0.01, step=0.001)
-
-    if st.button("Hitung Ketidakpastian"):
-        try:
-            # Olah data
-            data = np.array([float(x.strip()) for x in data_input.split(",") if x.strip() != ""])
-            n = len(data)
-
-            if n < 2:
-                st.error("Minimal masukkan 2 data pengukuran untuk perhitungan Tipe A.")
-            else:
-                rata2 = np.mean(data)
-                std_dev = np.std(data, ddof=1)
-                ua = std_dev / np.sqrt(n)  # Ketidakpastian Tipe A
-                ub = resolusi / np.sqrt(3)  # Ketidakpastian Tipe B
-                uc = np.sqrt(ua**2 + ub**2)  # Ketidakpastian Gabungan
-                persen = (uc / rata2) * 100  # Persentase ketidakpastian
-
-                # Hasil
-                st.markdown("---")
-                st.subheader("📈 Hasil Perhitungan:")
-                st.success(f"Rata-rata (x̄): {rata2:.4f}")
-                st.success(f"Simpangan baku (s): {std_dev:.4f}")
-                st.info(f"Ketidakpastian Tipe A (uₐ): {ua:.4f}")
-                st.info(f"Ketidakpastian Tipe B (uᵦ): {ub:.4f}")
-                st.warning(f"Ketidakpastian Gabungan (u꜀): {uc:.4f}")
-                st.markdown(f"### ✅ Hasil Akhir: **{rata2:.4f} ± {uc:.4f}**")
-                st.markdown(f"📌 Persentase ketidakpastian terhadap rata-rata: **{persen:.2f}%**")
-
-                # Interpretasi
-                if persen < 1:
-                    st.success("🎯 Akurasi tinggi (ketidakpastian < 1%)")
-                elif persen < 5:
-                    st.info("✔️ Akurasi sedang (ketidakpastian antara 1%-5%)")
-                else:
-                    st.warning("⚠️ Akurasi rendah (ketidakpastian > 5%). Perlu dicek ulang alat/data.")
-
-        except:
-            st.error("❌ Format input tidak valid. Pastikan hanya angka dan dipisahkan koma.")
-
-# ===== CARA PERHITUNGAN MANUAL =====
-elif menu == "Cara Perhitungan Manual":
-    
-    # Header & Deskripsi Menarik
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: #a40000 ;'>Perhitungan cara <span style='color:#00b7eb;'>Manual 📝</span>!</h1>
-        <h5 style='font-weight: normal;'>Berhitung dengan <i>manual </i>atau dengan menggunakan <i>kalkulator scientific</i></h5>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    #Isi cara secara manual
-    st.markdown("""
-    <h3 style='font-weight: normal;'>Menggunakan <i>Rumus </i> Secara Mandiri 📝</h3>
-    </div>
-     """, unsafe_allow_html=True)
-    
-    with st.expander("1. Hitung Rata-Rata Pengukuran"):
-        st.latex(r"\bar{x} = \frac{1}{n} \sum_{i=1}^{n} x_i")
-
-    with st.expander("2. Hitung Simpangan Baku"):
-        st.latex(r"s = \sqrt{\frac{\sum (x_i - \bar{x})^2}{n-1}}")
-
-    with st.expander("3. Hitung Ketidakpastian Tipe A (uₐ)"):
-        st.latex(r"u_a = \frac{s}{\sqrt{n}}")
-
-    with st.expander("4. Hitung Ketidakpastian Tipe B (uᵦ)"):
-        st.latex(r"u_b = \frac{\text{resolusi}}{\sqrt{3}}")
-
-    with st.expander("5. Hitung Ketidakpastian Gabungan (u꜀)"):
-        st.latex(r"u_c = \sqrt{u_a^2 + u_b^2}")
-
-    with st.expander("6. Tulis Hasil Pengukuran"):
-        st.latex(r"x = \bar{x} \pm u_c")
-        st.latex(r"\text{Persentase} = \frac{u_c}{\bar{x}} \times 100\%")
-
-        st.success("🎉 Semua langkah sudah dijelaskan. Silakan buka satu per satu untuk belajar mandiri ya!")
-
-  #Isi cara secara kalkulator scientific
-    st.markdown("""
-    <h3 style='font-weight: normal;'>Melihat cara kerja <i>kalkulator scientific </i> 📝</h3>
-    </div>
-        """, unsafe_allow_html=True)
-    
-# --- STEP 1: Input Data dan Hitung Rata-Rata ---
-    with st.expander("1️⃣ Hitung Rata-Rata dan Simpangan Baku"):
-        data_input = st.text_area("📥 Masukkan data pengukuran (dipisah koma)", "10.1, 10.3, 10.2, 10.4, 10.2")
-        if st.button("🔢 Hitung Rata-Rata & Simpangan Baku"):
-            try:
-                data = np.array([float(i.strip()) for i in data_input.split(",") if i.strip() != ""])
-                n = len(data)
-                if n < 2:
-                    st.error("❌ Minimal 2 data diperlukan.")
-                else:
-                    rata2 = np.mean(data)
-                    std_dev = np.std(data, ddof=1)
-                    st.latex(r"\bar{x} = \frac{1}{n} \sum x_i = %.4f" % rata2)
-                    st.latex(r"s = \sqrt{\frac{\sum (x_i - \bar{x})^2}{n-1}} = %.4f" % std_dev)
-                    st.success(f"✔️ Rata-rata: {rata2:.4f} | Simpangan baku: {std_dev:.4f}")
-            except:
-                st.error("❌ Format data tidak valid.")
-
-    # --- STEP 2: Ketidakpastian Tipe A ---
-    with st.expander("2️⃣ Hitung Ketidakpastian Tipe A (uₐ)"):
-        std_input = st.number_input("📥 Masukkan simpangan baku (s)", value=0.1, step=0.001)
-        n_input = st.number_input("🧮 Masukkan jumlah data (n)", value=5, step=1)
-        if st.button("📊 Hitung uₐ"):
-            try:
-                ua = std_input / np.sqrt(n_input)
-                st.latex(r"u_a = \frac{s}{\sqrt{n}} = \frac{%.4f}{\sqrt{%d}} = %.4f" % (std_input, n_input, ua))
-                st.success(f"Ketidakpastian Tipe A (uₐ): {ua:.4f}")
-            except:
-                st.error("❌ Masukkan nilai valid.")
-
-    # --- STEP 3: Ketidakpastian Tipe B ---
-    with st.expander("3️⃣ Hitung Ketidakpastian Tipe B (uᵦ)"):
-        resolusi = st.number_input("📏 Masukkan resolusi alat ukur", value=0.01, step=0.001)
-        if st.button("📐 Hitung uᵦ"):
-            ub = resolusi / np.sqrt(3)
-            st.latex(r"u_b = \frac{%.4f}{\sqrt{3}} = %.4f" % (resolusi, ub))
-            st.success(f"Ketidakpastian Tipe B (uᵦ): {ub:.4f}")
-
-    # --- STEP 4: Ketidakpastian Gabungan ---
-    with st.expander("4️⃣ Hitung Ketidakpastian Gabungan (u꜀)"):
-        ua_input = st.number_input("🟦 Masukkan uₐ", value=0.01, step=0.001)
-        ub_input = st.number_input("🟩 Masukkan uᵦ", value=0.005, step=0.001)
-        if st.button("🧮 Hitung u꜀"):
-            uc = np.sqrt(ua_input**2 + ub_input**2)
-            st.latex(r"u_c = \sqrt{u_a^2 + u_b^2} = %.4f" % uc)
-            st.success(f"Ketidakpastian Gabungan (u꜀): {uc:.4f}")
-
-    # --- STEP 5: Tampilkan Hasil Akhir ---
-    with st.expander("5️⃣ Hasil Akhir Pengukuran"):
-        rata_input = st.number_input("📌 Masukkan nilai rata-rata pengukuran (x̄)", value=10.2, step=0.001)
-        uc_input = st.number_input("📎 Masukkan u꜀", value=0.012, step=0.001)
-        if st.button("✅ Tampilkan Hasil Akhir"):
-            persen = (uc_input / rata_input) * 100
-            st.markdown(f"### 📏 Hasil: **{rata_input:.4f} ± {uc_input:.4f}**")
-            st.markdown(f"📊 Persentase ketidakpastian: **{persen:.2f}%**")
-            if persen < 1:
-                st.success("🎯 Akurasi tinggi (ketidakpastian < 1%)")
-            elif persen < 5:
-                st.info("✔️ Akurasi sedang (1%-5%)")
-            else:
-                st.warning("⚠️ Akurasi rendah (>5%)")
-# ===  FAKTOR KESALAHAN PENGUKURAN   === #
-elif menu == "Faktor Kesalahan":  
-    
-    # Header & Deskripsi Menarik
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: #4682b4;'>Faktor <span style='color:#ff8c00;'>Kesalahan</span>!</h1>
-        <h5 style='font-weight: normal;'>Beberapa <i>Faktor dan Kemungkinan </i>Jika Akurasi Rendah!</h5>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <p style='text-align: justify; font-size: 16px;'>
-    Dalam kegiatan pengukuran, khususnya dalam eksperimen fisika atau pengamatan ilmiah, hasil pengukuran seringkali tidak sepenuhnya akurat. Perbedaan antara hasil pengukuran dan nilai sebenarnya disebut dengan <b>galat</b> atau <b>kesalahan pengukuran</b>. Galat ini tidak selalu disebabkan oleh ketidaktelitian pengamat, namun juga bisa muncul akibat berbagai faktor yang berkaitan dengan alat ukur, metode yang digunakan, maupun kondisi lingkungan saat pengukuran dilakukan. Memahami penyebab galat sangat penting agar kita dapat meningkatkan ketelitian, mengurangi kesalahan, dan memperoleh hasil yang lebih akurat dalam setiap proses pengukuran.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    # Daftar faktor penyebab galat
-    st.markdown("""
-      <li><b>Kesalahan Kalibrasi Alat</b><br>
-      Alat ukur tidak dikalibrasi dengan standar yang benar. <br>
-      Contoh: neraca yang tidak disetel ke nol sebelum digunakan.</li><br>
-    
-      <li><b>Kesalahan Titik Nol (Zero Error)</b><br>
-      Alat ukur menunjukkan angka selain nol saat belum digunakan. <br>
-      Menyebabkan semua hasil pengukuran menjadi bias.</li><br>
-    
-      <li><b>Kualitas dan Kondisi Alat Ukur</b><br>
-      Alat aus, rusak, atau sudah tidak presisi lagi. <br>
-      Termasuk adanya goresan pada skala atau jarum yang tidak akurat.</li><br>
-    
-      <li><b>Kesalahan Pembacaan Skala (Paralaks)</b><br>
-      Sudut pandang tidak tegak lurus terhadap skala alat. <br>
-      Mengakibatkan hasil pembacaan tampak lebih atau kurang dari nilai sebenarnya.</li><br>
-    
-      <li><b>Lingkungan Sekitar</b><br>
-      Suhu, kelembaban, dan tekanan dapat mempengaruhi hasil pengukuran. <br>
-      Contoh: pita pengukur logam bisa memuai saat suhu tinggi.</li><br>
-    
-      <li><b>Pengaruh Gaya Luar</b><br>
-      Getaran, tekanan jari, atau gangguan fisik lainnya saat alat digunakan.</li><br>
-    
-      <li><b>Kesalahan Pengamat (Human Error)</b><br>
-      Kesalahan mencatat, salah baca, terburu-buru, atau kurang teliti. <br>
-      Termasuk kebiasaan menggampangkan pengukuran tanpa kontrol ulang.</li><br>
-    
-      <li><b>Metode Pengukuran yang Tidak Sesuai</b><br>
-      Teknik atau prosedur pengukuran tidak dilakukan dengan benar. <br>
-      Contoh: pengukuran panjang benda bengkok dengan penggaris lurus.</li><br>
-    
-      <li><b>Pemakaian Alat yang Tidak Sesuai Jenis Pengukuran</b><br>
-      Menggunakan alat yang tidak cocok untuk objek atau skala pengukuran tertentu.</li>
-    </ul>
-    """, unsafe_allow_html=True)
-
-# ===   Contoh Soal dan Pembahasan   === #
-elif menu == "Contoh Soal":
-    st.header("🧠 Contoh Soal")
-
-    # ======= Tabel Pertama =======
-    st.subheader("📋 Tabel Data Percobaan 1")
-
-    data1 = {
-        "Ulangan": ["1.", "2.", "3.", "4.", "5.", "Rerata"],
-        "Nilai X (cm)": [11.3, 11.7, 11.3, 11.5, 11.3, 11.42],
-        "Nilai Y (cm)": [5.3, 5.5, 5.3, 5.3, 5.7, 5.4],
-    }
-
-    df1 = pd.DataFrame(data1)
-    st.table(df1)
-
-    st.markdown("""
-    **Keterangan Tabel 1:**
-    
-    - Data percobaan berulang terhadap dua variabel (X dan Y) dengan Δ ketidakpastian.
-    - Nilai rata-rata sudah dihitung pada baris "Rerata".
-    """)
-
+# ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown('<div class="sidebar-logo">🌊 CleanWave Laundry</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-tagline">Sistem Manajemen Laundry Digital</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    # ======= Tabel Kedua =======
-    st.subheader("📋 Tabel Data Percobaan 2")
+    if st.session_state.logged_in:
+        u = st.session_state.logged_in
+        tier_name, tier_color, tier_icon = get_tier(u["poin"])
+        st.markdown(f"""
+        <div class="member-card">
+            <div class="member-name">👤 {u['nama']}</div>
+            <div class="member-info">{u['hp']}</div>
+            <div class="member-points">⭐ {u['poin']} Poin</div>
+            <div class="member-tier">{tier_icon} {tier_name} Member</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("")
 
-    data2 = {
-        "Ulangan": ["1.", "2.", "3.", "4.", "5.", "Rerata"],
-        "Nilai X (cm)": [3.0, 4.0, 4.3, 4.0, 4.5, 4.0],
-        "Nilai Y (cm)": [1.7, 2.0, 2.7, 2.5, 2.0, 2.2]
-    }
+    menu_items = ["🏠 Beranda", "📦 Pesan Laundry", "📋 Riwayat Transaksi", "⭐ Membership", "🔧 Alat & Bahan"]
+    if st.session_state.logged_in:
+        menu_items.append("👤 Profil Saya")
+    else:
+        menu_items.append("🔑 Masuk / Daftar")
 
-    df2 = pd.DataFrame(data2)
-    st.table(df2)
+    selected = st.radio("Navigasi", menu_items, label_visibility="collapsed")
+    page = selected.split(" ", 1)[1]
+    st.session_state.page = page
 
+    st.markdown("---")
+    if st.session_state.logged_in:
+        if st.button("🚪 Keluar", use_container_width=True):
+            st.session_state.logged_in = None
+            st.session_state.page = "Beranda"
+            st.rerun()
+
+    st.markdown('<div class="sidebar-footer">Industry 4.0 Prototype · UMKM Laundry</div>', unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: BERANDA
+# ══════════════════════════════════════════════════════════════════════════════
+if page == "Beranda":
     st.markdown("""
-    **Keterangan Tabel 2:**
-    
-    - Data percobaan berbeda dengan variabel X dan Y, tanpa Δ ketidakpastian.
-    - Nilai rata-rata sudah tersedia di baris "Rerata".
-    """)
+    <div class="hero-banner">
+        <div class="hero-badge">UMKM LAUNDRY · INDUSTRY 4.0 READY</div>
+        <h1 class="hero-title">CleanWave Laundry 🌊</h1>
+        <p class="hero-desc">Layanan laundry profesional dengan sistem digital terintegrasi.<br>Titip baju, kami urus semuanya.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.success("Silakan gunakan tabel ini untuk latihan menghitung ketidakpastian, simpangan baku, atau analisis lainnya.")
+    col1, col2, col3 = st.columns(3)
+    total_tx     = len(st.session_state.transaksi)
+    total_cust   = len(st.session_state.customers)
+    total_gold   = sum(1 for c in st.session_state.customers if c["tier"] == "Gold")
+    total_omset  = sum(t["harga"] for t in st.session_state.transaksi)
+
+    with col1:
+        st.markdown(f'<div class="stat-card"><div class="stat-icon">👥</div><div class="stat-val">{total_cust}</div><div class="stat-label">Pelanggan Aktif</div></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<div class="stat-card"><div class="stat-icon">📦</div><div class="stat-val">{total_tx}</div><div class="stat-label">Total Transaksi</div></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<div class="stat-card"><div class="stat-icon">⭐</div><div class="stat-val">{total_gold}</div><div class="stat-label">Member Gold</div></div>', unsafe_allow_html=True)
+
+    st.markdown("### 🧺 Layanan Kami")
+    col1, col2 = st.columns(2)
+    layanan_list = list(LAYANAN.items())
+    for i, (nama, info) in enumerate(layanan_list):
+        with (col1 if i % 2 == 0 else col2):
+            st.markdown(f"""
+            <div class="service-card">
+                <div class="service-name">{nama}</div>
+                <div class="service-desc">{info['deskripsi']}</div>
+                <div class="service-price">{format_rp(info['harga_per_kg'])}<span class="service-unit">/kg</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("### 💡 Program Membership")
+    st.markdown("""
+    <div class="promo-banner">
+        <span style="font-size:2rem">⭐</span>
+        <div style="flex:1">
+            <b style="font-size:1.1rem">Kumpulkan Poin, Dapatkan Hadiah!</b><br>
+            Setiap Rp 1.000 yang Anda keluarkan = 1 poin. Tukarkan poin dengan diskon & layanan gratis!
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: PESAN LAUNDRY
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Pesan Laundry":
+    st.markdown("## 📦 Pesan Laundry")
+    st.markdown("Isi formulir di bawah untuk menitipkan laundry Anda.")
+
+    col_form, col_sum = st.columns([1.4, 1])
+
+    with col_form:
+        with st.container(border=True):
+            st.markdown("#### 👤 Data Pelanggan")
+            nama  = st.text_input("Nama Lengkap", value=st.session_state.logged_in["nama"] if st.session_state.logged_in else "")
+            hp    = st.text_input("Nomor HP", value=st.session_state.logged_in["hp"] if st.session_state.logged_in else "", placeholder="08xxxxxxxxxx")
+
+        with st.container(border=True):
+            st.markdown("#### 🧺 Pilih Layanan")
+            layanan_pilihan = st.radio(
+                "Layanan",
+                list(LAYANAN.keys()),
+                label_visibility="collapsed",
+                format_func=lambda x: f"{x} — {format_rp(LAYANAN[x]['harga_per_kg'])}/kg"
+            )
+            st.caption(f"📝 {LAYANAN[layanan_pilihan]['deskripsi']}")
+
+        with st.container(border=True):
+            st.markdown("#### ⚖️ Detail Cucian")
+            kg = st.number_input("Berat Pakaian (kg)", min_value=0.5, max_value=50.0, value=1.0, step=0.5)
+            catatan = st.text_area("Catatan (opsional)", placeholder="Alergi deterjen tertentu, pakaian khusus, dll.", height=80)
+
+    with col_sum:
+        harga_per_kg = LAYANAN[layanan_pilihan]["harga_per_kg"]
+        total = int(kg * harga_per_kg)
+        poin_dapat = total // 1000
+
+        with st.container(border=True):
+            st.markdown("#### 🧾 Ringkasan Pesanan")
+            st.markdown(f"""
+            | Item | Detail |
+            |------|--------|
+            | Layanan | {layanan_pilihan} |
+            | Harga/kg | {format_rp(harga_per_kg)} |
+            | Berat | {kg} kg |
+            """)
+            st.markdown(f"<div class='total-box'><span>Total</span><b>{format_rp(total)}</b></div>", unsafe_allow_html=True)
+            if poin_dapat > 0:
+                st.info(f"⭐ Anda akan mendapat **{poin_dapat} poin** dari pesanan ini!")
+            st.markdown("")
+            pesan = st.button("✅ Konfirmasi Pesanan", use_container_width=True, type="primary")
+
+    if pesan:
+        if not nama or not hp:
+            st.error("❌ Nama dan nomor HP wajib diisi!")
+        elif kg < 0.5:
+            st.error("❌ Minimal berat 0.5 kg!")
+        else:
+            # Cari atau buat customer baru
+            cust = next((c for c in st.session_state.customers if c["hp"] == hp), None)
+            if not cust:
+                new_id = max(c["id"] for c in st.session_state.customers) + 1
+                cust = {"id": new_id, "nama": nama, "hp": hp, "email": "", "bergabung": str(date.today()), "poin": 0, "tier": "Bronze"}
+                st.session_state.customers.append(cust)
+
+            # Buat transaksi
+            tx = {
+                "id": next_tx_id(), "customer_id": cust["id"], "tanggal": str(date.today()),
+                "kg": kg, "layanan": layanan_pilihan, "harga": total, "status": "Menunggu",
+                "poin": poin_dapat, "deterjen": "Attack", "mesin": "Mesin LG 9kg", "catatan": catatan
+            }
+            st.session_state.transaksi.append(tx)
+            update_customer_points(cust["id"], poin_dapat)
+
+            st.balloons()
+            st.success(f"🎉 Pesanan berhasil! No. Order: **#{tx['id']}**")
+            st.markdown(f"""
+            <div class="success-card">
+                <b>👕 {layanan_pilihan}</b> · {kg} kg<br>
+                💰 Total: <b>{format_rp(total)}</b><br>
+                ⭐ Poin didapat: <b>+{poin_dapat} poin</b><br>
+                🕐 Status: <b>Menunggu</b>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: RIWAYAT TRANSAKSI
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Riwayat Transaksi":
+    st.markdown("## 📋 Riwayat Transaksi")
+
+    col1, col2, col3 = st.columns([2, 1.2, 1])
+    with col1:
+        cari = st.text_input("🔍 Cari nama / nomor HP", placeholder="Ketik untuk mencari...")
+    with col2:
+        filter_status = st.selectbox("Filter Status", ["Semua", "Menunggu", "Diproses", "Selesai"])
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # Build display data
+    rows = []
+    for tx in sorted(st.session_state.transaksi, key=lambda x: x["id"], reverse=True):
+        cust = find_customer(tx["customer_id"])
+        if not cust:
+            continue
+        match_cari = not cari or cari.lower() in cust["nama"].lower() or cari in cust["hp"]
+        match_status = filter_status == "Semua" or tx["status"] == filter_status
+        if match_cari and match_status:
+            rows.append({
+                "No. Order": f"#{tx['id']}",
+                "Pelanggan": cust["nama"],
+                "HP": cust["hp"],
+                "Tanggal": tx["tanggal"],
+                "Layanan": tx["layanan"],
+                "Berat (kg)": tx["kg"],
+                "Deterjen": tx["deterjen"],
+                "Mesin": tx["mesin"],
+                "Total": format_rp(tx["harga"]),
+                "Poin": f"+{tx['poin']} ⭐",
+                "Status": tx["status"],
+            })
+
+    if rows:
+        df = pd.DataFrame(rows)
+        st.dataframe(df, use_container_width=True, hide_index=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(options=["Menunggu", "Diproses", "Selesai", "Dibatalkan"]),
+            }
+        )
+    else:
+        st.info("Tidak ada data transaksi yang sesuai.")
+
+    st.markdown("---")
+    st.markdown("### 📊 Ringkasan")
+    c1, c2, c3 = st.columns(3)
+    all_tx = st.session_state.transaksi
+    total_omset = sum(t["harga"] for t in all_tx)
+    total_kg    = sum(t["kg"]    for t in all_tx)
+    avg_tx      = total_omset // len(all_tx) if all_tx else 0
+    with c1:
+        st.metric("💰 Total Pendapatan", format_rp(total_omset))
+    with c2:
+        st.metric("⚖️ Total Cucian", f"{total_kg:.1f} kg")
+    with c3:
+        st.metric("📊 Rata-rata/Transaksi", format_rp(avg_tx))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: MEMBERSHIP
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Membership":
+    st.markdown("## ⭐ Program Membership")
+    st.markdown("Kumpulkan poin dari setiap transaksi dan nikmati berbagai hadiah menarik.")
+
+    # Kartu member
+    if st.session_state.logged_in:
+        u = st.session_state.logged_in
+        tier_name, tier_color, tier_icon = get_tier(u["poin"])
+        if tier_name == "Bronze":
+            sisa_info = f"{200 - u['poin']} poin lagi ke Silver"
+        elif tier_name == "Silver":
+            sisa_info = f"{500 - u['poin']} poin lagi ke Gold"
+        else:
+            sisa_info = "Anda sudah di tier tertinggi! 🏆"
+
+        st.markdown(f"""
+        <div class="member-card-big">
+            <div style="font-size:0.75rem;letter-spacing:2px;opacity:0.7;margin-bottom:8px">CLEANWAVE MEMBER CARD</div>
+            <div style="font-size:1.6rem;font-weight:900">{u['nama']}</div>
+            <div style="opacity:0.8;margin-bottom:16px">{u['hp']}</div>
+            <div style="font-size:3rem;font-weight:900;line-height:1">{u['poin']}</div>
+            <div style="opacity:0.8;margin-bottom:8px">Poin</div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:0.8rem;opacity:0.7">{sisa_info}</span>
+                <span style="background:rgba(255,255,255,0.3);padding:4px 14px;border-radius:99px;font-weight:800">{tier_icon} {tier_name}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.warning("🔒 Login terlebih dahulu untuk melihat poin dan menukar hadiah.")
+        if st.button("🔑 Login Sekarang"):
+            st.session_state.page = "Masuk / Daftar"
+            st.rerun()
+
+    # Tier info
+    st.markdown("### 🏅 Level Keanggotaan")
+    tc1, tc2, tc3 = st.columns(3)
+    tier_data = [
+        ("Bronze 🥉", "0–199 poin",   "1 poin per Rp 1.000",                  "#FEF9C3"),
+        ("Silver 🥈", "200–499 poin", "1 poin + prioritas antrian",            "#F3F4F6"),
+        ("Gold 🥇",   "500+ poin",    "1 poin + prioritas + diskon 5%",        "#FEF3C7"),
+    ]
+    for col, (tnama, trange, tperks, tbg) in zip([tc1, tc2, tc3], tier_data):
+        with col:
+            st.markdown(f"""
+            <div class="tier-card" style="background:{tbg}">
+                <div class="tier-name">{tnama}</div>
+                <div class="tier-range">{trange}</div>
+                <div class="tier-perks">{tperks}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Hadiah
+    st.markdown("### 🎁 Tukar Poin")
+    h_cols = st.columns(2)
+    for i, h in enumerate(HADIAH):
+        with h_cols[i % 2]:
+            user_poin = st.session_state.logged_in["poin"] if st.session_state.logged_in else 0
+            bisa = user_poin >= h["poin"]
+            st.markdown(f"""
+            <div class="reward-card {'reward-active' if bisa else ''}">
+                <div style="font-size:2rem;margin-bottom:6px">{h['icon']}</div>
+                <div class="reward-name">{h['nama']}</div>
+                <div class="reward-desc">{h['deskripsi']}</div>
+                <div class="reward-cost">{h['poin']} ⭐</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if bisa and st.session_state.logged_in:
+                if st.button(f"Tukar: {h['nama']}", key=f"redeem_{i}", use_container_width=True):
+                    update_customer_points(st.session_state.logged_in["id"], -h["poin"])
+                    st.success(f"🎉 Berhasil menukar poin: **{h['nama']}**!")
+                    st.rerun()
+            else:
+                st.button("Poin tidak cukup", key=f"redeem_disabled_{i}", disabled=True, use_container_width=True)
+
+    # Tabel semua member
+    st.markdown("---")
+    st.markdown("### 👥 Daftar Semua Member")
+    member_rows = []
+    for c in sorted(st.session_state.customers, key=lambda x: x["poin"], reverse=True):
+        tier_name, _, tier_icon = get_tier(c["poin"])
+        member_rows.append({
+            "Nama": c["nama"],
+            "No. HP": c["hp"],
+            "Bergabung": c["bergabung"],
+            "Tier": f"{tier_icon} {tier_name}",
+            "Poin": c["poin"],
+        })
+    st.dataframe(pd.DataFrame(member_rows), use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: ALAT & BAHAN
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Alat & Bahan":
+    st.markdown("## 🔧 Alat & Bahan")
+    st.markdown("Informasi peralatan dan bahan yang kami gunakan untuk layanan terbaik.")
+
+    st.markdown("### 🏭 Peralatan Laundry")
+    pc1, pc2 = st.columns(2)
+    for i, eq in enumerate(PERALATAN):
+        with (pc1 if i % 2 == 0 else pc2):
+            st.markdown(f"""
+            <div class="equip-card">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                    <span style="font-size:2rem">{eq['icon']}</span>
+                    <div>
+                        <div style="font-weight:800;font-size:1rem">{eq['nama']}</div>
+                        <div style="font-size:0.8rem;color:#64748B">{eq['kategori']} · {eq['brand']}</div>
+                    </div>
+                </div>
+                <div style="font-size:0.875rem;color:#64748B;margin-bottom:8px">{eq['deskripsi']}</div>
+                {'<span class="badge-blue">⚖️ Kapasitas: ' + eq["kapasitas"] + '</span>' if eq["kapasitas"] != "-" else ""}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("### 🧴 Bahan & Produk Kebersihan")
+    bc1, bc2, bc3 = st.columns(3)
+    for i, b in enumerate(BAHAN):
+        with [bc1, bc2, bc3][i % 3]:
+            st.markdown(f"""
+            <div class="material-card">
+                <div style="font-size:2rem;margin-bottom:6px">{b['icon']}</div>
+                <div style="font-weight:800;font-size:1rem">{b['nama']}</div>
+                <span class="badge-blue">{b['tipe']}</span>
+                <div style="font-size:0.8rem;color:#64748B;margin-top:8px"><b>Kegunaan:</b> {b['kegunaan']}</div>
+                <div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">✅ {b['cocok']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### 🌿 Komitmen Kami")
+    k1, k2 = st.columns(2)
+    komitmen = [
+        "✅ Deterjen ramah lingkungan & biodegradable",
+        "✅ Air bersih hasil filtrasi RO",
+        "✅ Tidak menggunakan bahan berbahaya / keras",
+        "✅ Peralatan dicuci & dirawat secara berkala",
+    ]
+    for i, k in enumerate(komitmen):
+        with (k1 if i % 2 == 0 else k2):
+            st.markdown(f'<div class="komitmen-item">{k}</div>', unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: MASUK / DAFTAR
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Masuk / Daftar":
+    st.markdown("## 🔑 Masuk / Daftar")
+    col_mid, _ = st.columns([1.2, 1])
+    with col_mid:
+        tab_login, tab_daftar = st.tabs(["🔑 Masuk", "📝 Daftar Baru"])
+
+        with tab_login:
+            st.markdown("Masuk menggunakan nomor HP terdaftar.")
+            hp_login = st.text_input("Nomor HP", placeholder="08xxxxxxxxxx", key="hp_login")
+            if st.button("Masuk", type="primary", use_container_width=True):
+                cust = next((c for c in st.session_state.customers if c["hp"] == hp_login), None)
+                if cust:
+                    st.session_state.logged_in = cust
+                    st.success(f"✅ Selamat datang, **{cust['nama']}**!")
+                    st.session_state.page = "Beranda"
+                    st.rerun()
+                else:
+                    st.error("❌ Nomor HP tidak ditemukan. Coba daftar dulu.")
+            st.caption("**Demo:** gunakan `081234567890`, `082345678901`, atau `083456789012`")
+
+        with tab_daftar:
+            st.markdown("Daftar sebagai member baru untuk mendapatkan poin.")
+            nama_reg = st.text_input("Nama Lengkap", key="nama_reg")
+            hp_reg   = st.text_input("Nomor HP", placeholder="08xxxxxxxxxx", key="hp_reg")
+            email_reg= st.text_input("Email (opsional)", placeholder="email@contoh.com", key="email_reg")
+            if st.button("Daftar Sekarang", type="primary", use_container_width=True):
+                if not nama_reg or not hp_reg:
+                    st.error("❌ Nama dan HP wajib diisi!")
+                elif any(c["hp"] == hp_reg for c in st.session_state.customers):
+                    st.error("❌ Nomor HP sudah terdaftar!")
+                else:
+                    new_id = max(c["id"] for c in st.session_state.customers) + 1
+                    new_cust = {"id": new_id, "nama": nama_reg, "hp": hp_reg, "email": email_reg,
+                                "bergabung": str(date.today()), "poin": 0, "tier": "Bronze"}
+                    st.session_state.customers.append(new_cust)
+                    st.session_state.logged_in = new_cust
+                    st.success(f"🎉 Berhasil daftar! Selamat datang, **{nama_reg}**!")
+                    st.session_state.page = "Beranda"
+                    st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: PROFIL
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Profil Saya":
+    if not st.session_state.logged_in:
+        st.warning("Anda belum login.")
+        st.stop()
+
+    u = st.session_state.logged_in
+    tier_name, tier_color, tier_icon = get_tier(u["poin"])
+
+    st.markdown(f"## 👤 Profil: {u['nama']}")
+    col_info, col_tx = st.columns([1, 1.8])
+
+    with col_info:
+        with st.container(border=True):
+            st.markdown(f"**Nama:** {u['nama']}")
+            st.markdown(f"**No. HP:** {u['hp']}")
+            st.markdown(f"**Email:** {u['email'] or '-'}")
+            st.markdown(f"**Bergabung:** {u['bergabung']}")
+            st.markdown(f"**Tier:** {tier_icon} {tier_name}")
+            st.metric("⭐ Poin Saya", u["poin"])
+
+    with col_tx:
+        st.markdown("#### 📋 Riwayat Transaksi Saya")
+        my_tx = [t for t in st.session_state.transaksi if t["customer_id"] == u["id"]]
+        if my_tx:
+            rows = [{"Tanggal": t["tanggal"], "Layanan": t["layanan"],
+                     "Berat": f"{t['kg']} kg", "Total": format_rp(t["harga"]),
+                     "Poin": f"+{t['poin']}⭐", "Status": t["status"]} for t in sorted(my_tx, key=lambda x: x["id"], reverse=True)]
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("Belum ada transaksi.")
